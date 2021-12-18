@@ -1,0 +1,19 @@
+---
+version: '3'
+services:
+  snake-reinforced-jupyter:
+    runtime: nvidia
+    environment:
+      SDL_VIDEODRIVER: dummy
+    build:
+      context: .
+      dockerfile: ./Dockerfile.cuda
+    restart: unless-stopped
+    container_name: snake-reinforced-jupyter
+    ports:
+      - "0.0.0.0:9999:9999"
+    volumes:
+      - "./:/app"
+      - "~/data:/data"
+    command: >
+      jupyter lab --port=9999 --ip=0.0.0.0 --no-browser --allow-root --notebook-dir="/app"

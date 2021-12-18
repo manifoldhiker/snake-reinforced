@@ -1,0 +1,9 @@
+jupyterlab
+matplotlib
+seaborn
+notebook
+ipywidgets
+wandb
+sklearn
+
+# TODO: freeze
