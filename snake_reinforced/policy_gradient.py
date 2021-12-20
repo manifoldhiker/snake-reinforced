@@ -134,9 +134,6 @@ class PolicyGradientTrainer:
         else:
             print(*args, **kwargs)
 
-    def log_loss(self, loss_name, loss):
-        self.log({loss_name: loss.detach().cpu().item()})
-
     def save_snake_video(self, epoch_i=None):
         filename = self.cfg.logging.video_filename.format(epoch_i=epoch_i)
         save_snake_video(self.ple_env, self.agent, filename,
@@ -145,14 +142,17 @@ class PolicyGradientTrainer:
 
     def _call_epoch_callbacks(self, epoch_i):
         if (epoch_i + 1) % self.cfg.logging.log_video_every_n_epoch == 0:
-            print('epoch_i={epoch_i}. Saving video..')
+            print({'epoch': epoch_i, 'message': 'Saving video..'})
             video_path = self.save_snake_video(epoch_i)
-            self.log({'video': video_path})
+            self.log({'video': video_path, 'epoch': epoch_i})
 
             if self.use_wandb:
                 wandb.log({"video": wandb.Video(video_path, fps=30)})
 
-    def train_epoch_step(self, epoch_logits, epoch_weighted_log_probs, epoch_advantages):
+    def train_epoch_step(self, epoch_logits,
+                         epoch_weighted_log_probs,
+                         epoch_advantages,
+                         epoch_i):
         policy_loss, entropy, value_loss = calculate_loss(epoch_logits=epoch_logits,
                                                           weighted_log_probs=epoch_weighted_log_probs,
                                                           epoch_advantages=epoch_advantages)
@@ -160,10 +160,13 @@ class PolicyGradientTrainer:
         total_loss = policy_loss + self.cfg.loss.entropy_weight * \
             entropy + self.cfg.loss.value_weight * value_loss
 
-        self.log_loss("policy_loss", policy_loss)
-        self.log_loss("entropy", entropy)
-        self.log_loss("value_loss", value_loss)
-        self.log_loss("total_loss", total_loss)
+        def log_loss(loss_name, loss):
+            self.log({loss_name: loss.detach().cpu().item(), 'epoch': epoch_i})
+
+        log_loss("policy_loss", policy_loss)
+        log_loss("entropy", entropy)
+        log_loss("value_loss", value_loss)
+        log_loss("total_loss", total_loss)
 
         return total_loss
 
@@ -188,13 +191,14 @@ class PolicyGradientTrainer:
                 episodes['discounted_rewards_to_go'].values.tolist())
 
             loss = self.train_epoch_step(
-                epoch_logits, epoch_weighted_log_probs, epoch_advantages)
+                epoch_logits, epoch_weighted_log_probs, epoch_advantages, epoch_i)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            self.log({'mean_reward': episodes['sum_of_rewards'].mean()})
+            self.log(
+                {'mean_reward': episodes['sum_of_rewards'].mean(), 'epoch': epoch_i})
 
             self._call_epoch_callbacks(epoch_i)
             epoch_i += 1
