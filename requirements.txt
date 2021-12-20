@@ -5,5 +5,6 @@ notebook
 ipywidgets
 wandb
 sklearn
+hydra-core 
 
 # TODO: freeze
