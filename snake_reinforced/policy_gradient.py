@@ -9,6 +9,7 @@ from snake_reinforced.game import init_ple_env, ACTION2PLE_CODE, get_snake_len
 from snake_reinforced.agents import to_action_name
 from snake_reinforced.vis import save_snake_video
 from snake_reinforced.infrastructure import seed_all, save_state_dict
+from snake_reinforced.utilities.grad import grad_norm, main_params
 
 
 def get_discounted_rewards(rewards: np.array, gamma: float) -> np.array:
@@ -202,6 +203,7 @@ class PolicyGradientTrainer:
 
         epoch_i = 0
         while True:
+            optimizer.zero_grad()
             episodes = [play_episode(self.ple_env, self.agent, self.cfg)
                         for i in range(self.cfg.training.batch_size)]
             episodes = pd.DataFrame(episodes)
@@ -216,13 +218,30 @@ class PolicyGradientTrainer:
             loss = self.train_epoch_step(
                 epoch_logits, epoch_weighted_log_probs, epoch_advantages, epoch_i)
 
-            optimizer.zero_grad()
             loss.backward()
+
+            if self.cfg.logging.get('track_grad_norm', True):
+                grad_norm_dict = grad_norm(self.agent, norm_type=2)
+            else:
+                grad_norm_dict = {}
+
+            if self.cfg.training.get('grad_clip', False):
+                max_norm = self.cfg.training.get('grad_clip_max_norm', 2.0)
+
+                params = main_params(optimizer)
+                total_norm = torch.nn.utils.clip_grad_norm_(
+                    params, max_norm=max_norm)
+
+                # self.log(
+                #     {'grad_clip_total_norm': total_norm.item(),
+                #      'epoch': epoch_i})
+
             optimizer.step()
 
             self.log(
                 {'mean_reward': episodes['sum_of_rewards'].mean(),
                  'mean_snake_len': episodes['snake_len'].mean(),
+                 **grad_norm_dict,
                  'epoch': epoch_i})
 
             self._call_epoch_callbacks(epoch_i)
