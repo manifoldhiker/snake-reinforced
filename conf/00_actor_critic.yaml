@@ -4,16 +4,25 @@ defaults:
   - optimizer: adamw
 
 device: cuda:1
+seed: 0
+
+net:
+  _target_: snake_reinforced.nn.actor_critic.ActorCriticPerceptron
 
 logging:
   project_name: snake_reinforced
-  run_name: pg_baseline_00
-  log_video_every_n_epoch: 50
+  run_name: pg_baseline_02
+  checkpoint_every_n_epoch: 1000
+
+  checkpoint_filename: ./checkpoints/${logging.run_name}/snake__epoch_{epoch_i}.pytorch
+
+  log_video_every_n_epoch: 100
   video_filename: ./videos/${logging.run_name}/snake__epoch_{epoch_i}.mp4
   n_last_frames: 1000
 
 
 training:
+  detach_value_grad: true
   gamma_discount: 0.99
   
   lr: 1e-3

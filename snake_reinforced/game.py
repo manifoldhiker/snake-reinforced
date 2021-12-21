@@ -30,12 +30,25 @@ def rgb2gray(rgb):
 
 
 def rgb_array2gray_tensor(rgb):
-    return torch.tensor(rgb2gray(np.asarray(rgb)), dtype=torch.float32)
+    return torch.tensor(rgb2gray(np.asarray(rgb)), dtype=torch.float32)[None, None, :]
 
 
 def preprocess_to_flatten_gray(rgb):
     gray = rgb_array2gray_tensor(rgb)
     return gray.flatten()[None, :]
+
+
+def get_snake_len(ple_env): return len(
+    ple_env.getGameState()['snake_body_pos'])
+
+
+class RandomAgent:
+    def __init__(self, action_set=list(ACTION2ID.keys())):
+        self.action_set = action_set
+
+    def act(self, observation):
+        action = np.random.choice(self.action_set)
+        return {'action': action}
 
 
 def play_game(agent, ple_env, max_frames=None):
@@ -60,4 +73,8 @@ def play_game(agent, ple_env, max_frames=None):
         action_code = ACTION2PLE_CODE[action]
         reward = ple_env.act(action_code)
 
-        yield {'observation': observation, 'action': action, 'reward': reward}
+        yield {'observation': observation,
+               'action': action,
+               'reward': reward,
+               'snake_len': get_snake_len(ple_env)
+               }

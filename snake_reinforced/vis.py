@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from pathlib import Path
 
-from .game import ACTION2ID, play_game
+from snake_reinforced.game import ACTION2ID, play_game
+from snake_reinforced.infrastructure import ensure_parent_exists
 
 MAX_ACTION_LEN = max([len(a) for a in ACTION2ID.keys()])
 
@@ -15,7 +15,7 @@ def animate_frames(frames):
     def animate(step, ax):
         ax.cla()
         frame = frames[step]
-        title = f'Action={frame["action"].rjust(MAX_ACTION_LEN)}, reward={frame["reward"]}'
+        title = f'step={step:04d}, snake_len={frame["snake_len"]:02d}'
         im = ax.imshow(frame['observation'], animated=True)
         im = ax.set_title(title)
 
@@ -26,7 +26,7 @@ def animate_frames(frames):
 
 
 def save_snake_video(ple_env, agent, filename, n_last_frames=200):
-    Path(filename).parent.mkdir(exist_ok=True, parents=True)
+    ensure_parent_exists(filename)
 
     frames = list(play_game(agent, ple_env))
     frames = frames[-n_last_frames:]

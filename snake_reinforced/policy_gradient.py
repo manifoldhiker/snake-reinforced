@@ -5,9 +5,10 @@ import torch
 import wandb
 from hydra.utils import instantiate
 
-from snake_reinforced.game import init_ple_env, ACTION2PLE_CODE
+from snake_reinforced.game import init_ple_env, ACTION2PLE_CODE, get_snake_len
 from snake_reinforced.agents import to_action_name
 from snake_reinforced.vis import save_snake_video
+from snake_reinforced.infrastructure import seed_all, save_state_dict
 
 
 def get_discounted_rewards(rewards: np.array, gamma: float) -> np.array:
@@ -55,10 +56,12 @@ def play_episode(ple_env, agent, cfg):
         # the episode is over
         if done:
             episode_rewards = np.array(episode_rewards)
-            episode_state_values = torch.tensor(
-                episode_state_values, dtype=torch.float32, device=cfg.device)
-            episode_logits = torch.cat(episode_logits).to(
-                torch.float32).to(cfg.device)
+
+            episode_state_values = torch.cat(episode_state_values).flatten()
+            assert episode_state_values.requires_grad
+
+            episode_logits = torch.cat(episode_logits)
+
             episode_actions = torch.tensor(
                 episode_actions, dtype=torch.long, device=cfg.device)
 
@@ -70,7 +73,9 @@ def play_episode(ple_env, agent, cfg):
             discounted_rewards_to_go = torch.tensor(
                 discounted_rewards_to_go).float().to(cfg.device)
 
-            discounted_rewards_to_go -= episode_state_values
+            baseline = episode_state_values
+
+            discounted_rewards_to_go -= baseline
 
             # calculate the sum of the rewards for the running average metric
             sum_of_rewards = np.sum(episode_rewards)
@@ -85,7 +90,7 @@ def play_episode(ple_env, agent, cfg):
 
             # weight the episode log-probabilities by the rewards-to-go
             episode_weighted_log_probs = episode_log_probs * \
-                discounted_rewards_to_go
+                discounted_rewards_to_go.detach()
 
             # calculate the sum over trajectory of the weighted log-probabilities
             sum_weighted_log_probs = torch.sum(
@@ -95,6 +100,7 @@ def play_episode(ple_env, agent, cfg):
                 'episode_logits': episode_logits,
                 'sum_of_rewards': sum_of_rewards,
                 'discounted_rewards_to_go': discounted_rewards_to_go,
+                'snake_len': get_snake_len(ple_env)
             }
 
 
@@ -108,6 +114,11 @@ def calculate_loss(epoch_logits: torch.Tensor, weighted_log_probs: torch.Tensor,
             policy loss
             entropy
     """
+
+    assert epoch_logits.requires_grad
+    assert weighted_log_probs.requires_grad
+    assert epoch_advantages.requires_grad
+
     policy_loss = -1 * torch.mean(weighted_log_probs)
 
     value_loss = torch.mean(torch.pow(epoch_advantages, 2))
@@ -116,12 +127,12 @@ def calculate_loss(epoch_logits: torch.Tensor, weighted_log_probs: torch.Tensor,
     p = softmax(epoch_logits, dim=1)
     log_p = log_softmax(epoch_logits, dim=1)
     entropy = -1 * torch.mean(torch.sum(p * log_p, dim=1), dim=0)
-    entropy_bonus = entropy
     return policy_loss, entropy, value_loss
 
 
 class PolicyGradientTrainer:
     def __init__(self, cfg, use_wandb=True):
+        seed_all(cfg.seed)
         self.cfg = cfg
 
         self.ple_env = init_ple_env()
@@ -140,14 +151,24 @@ class PolicyGradientTrainer:
                          n_last_frames=self.cfg.logging.n_last_frames)
         return filename
 
+    def save_agent(self, epoch_i=None):
+        filename = self.cfg.logging.checkpoint_filename.format(epoch_i=epoch_i)
+        save_state_dict(self.agent, filename)
+        return filename
+
     def _call_epoch_callbacks(self, epoch_i):
+        # print(self.agent.critic[0].weight[:5])
         if (epoch_i + 1) % self.cfg.logging.log_video_every_n_epoch == 0:
             print({'epoch': epoch_i, 'message': 'Saving video..'})
             video_path = self.save_snake_video(epoch_i)
-            self.log({'video': video_path, 'epoch': epoch_i})
+            self.log({'video_path': video_path, 'epoch': epoch_i})
 
             if self.use_wandb:
                 wandb.log({"video": wandb.Video(video_path, fps=30)})
+
+        if (epoch_i + 1) % self.cfg.logging.checkpoint_every_n_epoch == 0:
+            checkpoint_path = self.save_agent(epoch_i)
+            print('Saved model to ',  checkpoint_path)
 
     def train_epoch_step(self, epoch_logits,
                          epoch_weighted_log_probs,
@@ -171,9 +192,11 @@ class PolicyGradientTrainer:
         return total_loss
 
     def train(self):
+        seed_all(self.cfg.seed)
         if self.use_wandb:
             wandb.init(project=self.cfg.logging.project_name,
-                       name=self.cfg.logging.run_name)
+                       name=self.cfg.logging.run_name,
+                       config=self.cfg)
 
         optimizer = instantiate(self.cfg.optimizer, self.agent.parameters())
 
@@ -198,7 +221,9 @@ class PolicyGradientTrainer:
             optimizer.step()
 
             self.log(
-                {'mean_reward': episodes['sum_of_rewards'].mean(), 'epoch': epoch_i})
+                {'mean_reward': episodes['sum_of_rewards'].mean(),
+                 'mean_snake_len': episodes['snake_len'].mean(),
+                 'epoch': epoch_i})
 
             self._call_epoch_callbacks(epoch_i)
             epoch_i += 1
