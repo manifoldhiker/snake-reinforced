@@ -33,6 +33,8 @@ def get_discounted_rewards(rewards: np.array, gamma: float) -> np.array:
 def play_episode(ple_env, agent, cfg):
     ple_env.reset_game()
 
+    max_episode_len = cfg.training.get('max_episode_len', 10_000)
+
     # initialize the episode arrays
     episode_actions = []
     episode_logits = []
@@ -47,12 +49,18 @@ def play_episode(ple_env, agent, cfg):
 
         reward = ple_env.act(action_code)
 
+        reward_config = cfg.get('reward', False)
+        if reward_config:
+            if reward > 0:
+                reward *= reward_config.get('food_multiplier', 1)
+            reward /= reward_config.get('divide_by', 1)
+
         episode_actions.append(act_result['action'])
         episode_logits.append(act_result['action_logits'])
         episode_rewards.append(reward)
         episode_state_values.append(act_result['value'])
 
-        done = ple_env.game_over()
+        done = ple_env.game_over() or len(episode_actions) >= max_episode_len
         # done = True
         # the episode is over
         if done:
@@ -132,17 +140,20 @@ def calculate_loss(epoch_logits: torch.Tensor, weighted_log_probs: torch.Tensor,
 
 
 class PolicyGradientTrainer:
-    def __init__(self, cfg, use_wandb=True):
+    def __init__(self, cfg, use_wandb=True, console_verbose=False):
         seed_all(cfg.seed)
         self.cfg = cfg
 
         self.ple_env = init_ple_env()
         self.agent = instantiate(cfg.agent)
         self.use_wandb = use_wandb
+        self.console_verbose = console_verbose
 
     def log(self, *args, **kwargs):
         if self.use_wandb:
             wandb.log(*args, **kwargs)
+            if self.console_verbose:
+                print(*args, **kwargs)
         else:
             print(*args, **kwargs)
 
@@ -171,7 +182,8 @@ class PolicyGradientTrainer:
             checkpoint_path = self.save_agent(epoch_i)
             print('Saved model to ',  checkpoint_path)
 
-    def train_epoch_step(self, epoch_logits,
+    def train_epoch_step(self,
+                         epoch_logits,
                          epoch_weighted_log_probs,
                          epoch_advantages,
                          epoch_i):
@@ -204,8 +216,20 @@ class PolicyGradientTrainer:
         epoch_i = 0
         while True:
             optimizer.zero_grad()
-            episodes = [play_episode(self.ple_env, self.agent, self.cfg)
-                        for i in range(self.cfg.training.batch_size)]
+            episodes = []
+            total_frames = 0
+            print('Started sampling episodes')
+            for i in range(self.cfg.training.batch_size):
+                frames = play_episode(self.ple_env, self.agent, self.cfg)
+                episodes.append(frames)
+
+                n_frames = len(frames["episode_logits"])
+                total_frames += n_frames
+
+                if total_frames > self.cfg.training.sampling_frame_limit:
+                    print(f'Sampled {total_frames}, stopping for this epoch.')
+                    break
+
             episodes = pd.DataFrame(episodes)
 
             epoch_logits = torch.cat(

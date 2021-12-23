@@ -22,6 +22,8 @@ logging:
 
 
 training:
+  sampling_frame_limit: 32_000
+  max_episode_len: 500
   detach_value_grad: true
   gamma_discount: 0.99
   
@@ -29,6 +31,7 @@ training:
   weight_decay: 1e-5
   
   batch_size: 32
+  grad_clip: True
 
 loss:
   value_weight: 0.5
