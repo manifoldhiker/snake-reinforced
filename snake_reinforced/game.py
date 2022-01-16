@@ -6,8 +6,8 @@ from ple import PLE
 from pygame.constants import K_w, K_a, K_s, K_d
 
 
-def init_ple_env():
-    game = Snake(width=64, height=64)
+def init_ple_env(init_length=3):
+    game = Snake(width=64, height=64, init_length=init_length)
     ple_env = PLE(game, fps=30, display_screen=True)
     ple_env.init()
     return ple_env

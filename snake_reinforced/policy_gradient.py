@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 import wandb
+from datetime import datetime
 from hydra.utils import instantiate
 
 from snake_reinforced.game import init_ple_env, ACTION2PLE_CODE, get_snake_len
@@ -144,7 +145,8 @@ class PolicyGradientTrainer:
         seed_all(cfg.seed)
         self.cfg = cfg
 
-        self.ple_env = init_ple_env()
+        self.ple_env = init_ple_env(
+            init_length=cfg.get('init_snake_length', 3))
         self.agent = instantiate(cfg.agent)
         self.use_wandb = use_wandb
         self.console_verbose = console_verbose
@@ -218,7 +220,8 @@ class PolicyGradientTrainer:
             optimizer.zero_grad()
             episodes = []
             total_frames = 0
-            print('Started sampling episodes')
+            print(
+                f"{datetime.utcnow().strftime('%m_%d_%Y__%H_%M_%S')} Sampling episodes")
             for i in range(self.cfg.training.batch_size):
                 frames = play_episode(self.ple_env, self.agent, self.cfg)
                 episodes.append(frames)

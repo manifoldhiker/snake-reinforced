@@ -1,0 +1,42 @@
+# @package _global_
+
+load_from_checkpoint: /app/notebooks/checkpoints/pg_cnn_05/snake__epoch_13499.pytorch
+init_snake_length: 420
+device: cuda:3
+
+net:
+  _target_: snake_reinforced.nn.actor_critic.ActorCriticConvNet
+
+logging:
+  project_name: snake_reinforced
+  run_name: pg_cnn_06
+  checkpoint_every_n_epoch: 100
+
+  checkpoint_filename: ./checkpoints/${logging.run_name}/snake__epoch_{epoch_i}.pytorch
+
+  log_video_every_n_epoch: 100
+  video_filename: ./videos/${logging.run_name}/snake__epoch_{epoch_i}.mp4
+  n_last_frames: 2000
+
+
+reward:
+  food_multiplier: 5
+  divide_by: 5
+
+
+training:
+  sampling_frame_limit: 50_000
+  max_episode_len: 6_000
+  detach_value_grad: true
+  gamma_discount: 0.99
+  
+  lr: 1e-4
+  weight_decay: 1e-5
+  
+  batch_size: 32
+  grad_clip: True
+
+
+loss:
+  value_weight: 1
+  entropy_weight: -2
